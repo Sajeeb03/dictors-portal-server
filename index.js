@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
-const { MongoClient } = require('mongodb');
+const { MongoClient, ObjectId } = require('mongodb');
 
 require('dotenv').config();
 
@@ -10,6 +10,25 @@ const port = process.env.PORT || 5000;
 const app = express();
 app.use(cors());
 app.use(express.json())
+
+function verifyJwt(req, res, next) {
+    const authHeader = req.headers.authorization;
+    // console.log(authHeader);
+    if (!authHeader) {
+        return res.status(401).send("Unauthorized access")
+    }
+    const token = authHeader.split(' ')[1];
+    // console.log("token", token)
+    // console.log(process.env.ACCESS_TOKEN)
+    jwt.verify(token, process.env.ACCESS_TOKEN, function (err, decoded) {
+        if (err) {
+            // console.log(err.message)
+            return res.status(403).send({ message: "Forbidden access" })
+        }
+        req.decoded = decoded;
+        next();
+    })
+}
 
 const uri = process.env.URI;
 const client = new MongoClient(uri);
@@ -91,12 +110,13 @@ app.post("/bookings", async (req, res) => {
     }
 })
 
-app.get('/bookings', async (req, res) => {
+app.get('/bookings', verifyJwt, async (req, res) => {
     try {
         const { email } = req.query;
         const query = { email: email }
-
+        // console.log(query)
         const result = await Bookings.find(query).toArray();
+        // console.log(result)
         res.send({
             success: true,
             data: result
@@ -147,6 +167,39 @@ app.get('/jwt', async (req, res) => {
                 message: "forbidden"
             })
         }
+    } catch (error) {
+        res.send({
+            success: false,
+            message: error.message
+        })
+    }
+})
+
+//users
+app.get("/users", async (req, res) => {
+    try {
+        const result = await Users.find({}).toArray();
+        res.send({
+            success: true,
+            data: result
+        })
+    } catch (error) {
+        res.send({
+            success: false,
+            message: error.message
+        })
+    }
+})
+
+//admin 
+app.put('/users/admin/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await Users.updateOne({ _id: ObjectId(id) }, { $set: { role: "admin" } }, { upsert: true })
+        res.send({
+            success: true,
+            message: "Admin added"
+        })
     } catch (error) {
         res.send({
             success: false,
