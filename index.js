@@ -176,8 +176,19 @@ app.get('/jwt', async (req, res) => {
 })
 
 //users
-app.get("/users", async (req, res) => {
+app.get("/users", verifyJwt, async (req, res) => {
     try {
+        const decodedEmail = req.decoded.email;
+        const user = await Users.findOne({ email: decodedEmail });
+        if (user.role !== "admin") {
+            return res.send(
+                {
+                    success: false,
+                    data: []
+                }
+            )
+        }
+
         const result = await Users.find({}).toArray();
         res.send({
             success: true,
@@ -190,10 +201,26 @@ app.get("/users", async (req, res) => {
         })
     }
 })
+//check if admin 
+
+app.get('/users/admin/:email', async (req, res) => {
+    try {
+        const { email } = req.params;
+        const result = await Users.findOne({ email: email })
+        res.send({ isAdmin: result.role === 'admin' });
+    } catch (error) {
+
+    }
+})
 
 //admin 
-app.put('/users/admin/:id', async (req, res) => {
+app.put('/users/admin/:id', verifyJwt, async (req, res) => {
     try {
+        const decodedEmail = req.decoded.email;
+        const user = await Users.findOne({ email: decodedEmail })
+        if (user.role !== "admin") {
+            return res.status(403).send({ success: false, message: "forbidden access" })
+        }
         const { id } = req.params;
         const result = await Users.updateOne({ _id: ObjectId(id) }, { $set: { role: "admin" } }, { upsert: true })
         res.send({
