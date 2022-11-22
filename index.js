@@ -47,8 +47,20 @@ dbConnect();
 const Services = client.db("doctors-portal").collection("appointmentOptions");
 const Bookings = client.db("doctors-portal").collection("bookings");
 const Users = client.db("doctors-portal").collection("users");
+const Doctors = client.db("doctors-portal").collection("doctors");
 
+//verify Admin 
 
+const verifyAdmin = async (req, res, next) => {
+    // console.log(req.decoded.email)
+    const decodedEmail = req.decoded.email;
+    const user = await Users.findOne({ email: decodedEmail });
+    if (user.role !== 'admin') {
+        return res.status(403).send({ success: false, message: "forbidden access" })
+    }
+    next();
+
+}
 app.get('/appointments', async (req, res) => {
     try {
         const { date } = req.query;
@@ -78,6 +90,25 @@ app.get('/appointments', async (req, res) => {
         )
     }
 })
+//only appointment name
+
+app.get('/specialty', async (req, res) => {
+    try {
+        const result = await Services.find({}).project({ name: 1 }).toArray();
+        res.send({
+            success: true,
+            data: result
+        })
+
+    } catch (error) {
+        res.send(
+            {
+                success: false,
+                message: error.message
+            }
+        )
+    }
+})
 
 //post bookings
 
@@ -90,10 +121,11 @@ app.post("/bookings", async (req, res) => {
             email: booking.email
         }
         const bookedOnce = await Bookings.find(query).toArray();
+        // console.log(bookedOnce)
         if (bookedOnce.length) {
             return res.send({
                 success: false,
-                message: `You already have a booking at ${bookedOnce.slot}`
+                message: `You already have a booking at ${bookedOnce[0].slot}`
             })
         }
         const result = await Bookings.insertOne(booking);
@@ -155,7 +187,7 @@ app.get('/jwt', async (req, res) => {
         const user = await Users.findOne({ email: email });
 
         if (user) {
-            const token = jwt.sign({ email }, process.env.ACCESS_TOKEN, { expiresIn: "1h" })
+            const token = jwt.sign({ email }, process.env.ACCESS_TOKEN, { expiresIn: "1d" })
             return res.send({
                 success: true,
                 data: token
@@ -201,7 +233,7 @@ app.get("/users", verifyJwt, async (req, res) => {
         })
     }
 })
-//check if admin 
+//check if admin for hook
 
 app.get('/users/admin/:email', async (req, res) => {
     try {
@@ -209,23 +241,71 @@ app.get('/users/admin/:email', async (req, res) => {
         const result = await Users.findOne({ email: email })
         res.send({ isAdmin: result.role === 'admin' });
     } catch (error) {
-
+        res.send({
+            success: false,
+            message: error.message
+        })
     }
 })
 
 //admin 
-app.put('/users/admin/:id', verifyJwt, async (req, res) => {
+app.put('/users/admin/:id', verifyJwt, verifyAdmin, async (req, res) => {
     try {
-        const decodedEmail = req.decoded.email;
-        const user = await Users.findOne({ email: decodedEmail })
-        if (user.role !== "admin") {
-            return res.status(403).send({ success: false, message: "forbidden access" })
-        }
+
         const { id } = req.params;
         const result = await Users.updateOne({ _id: ObjectId(id) }, { $set: { role: "admin" } }, { upsert: true })
         res.send({
             success: true,
             message: "Admin added"
+        })
+    } catch (error) {
+        res.send({
+            success: false,
+            message: error.message
+        })
+    }
+})
+
+//post doctors
+
+app.post('/doctors', verifyJwt, verifyAdmin, async (req, res) => {
+    try {
+        const result = await Doctors.insertOne(req.body);
+        res.send({
+            success: true,
+            message: "Doctor Added"
+        })
+    } catch (error) {
+        res.send({
+            success: false,
+            message: error.message
+        })
+    }
+})
+//get doctors
+app.get("/doctors", verifyJwt, verifyAdmin, async (req, res) => {
+    try {
+        const result = await Doctors.find({}).toArray();
+        res.send({
+            success: true,
+            data: result
+        })
+    } catch (error) {
+        res.send({
+            success: false,
+            message: error.message
+        })
+    }
+})
+
+//delete doctor
+app.delete('/doctors/:id', verifyJwt, verifyAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await Doctors.deleteOne({ _id: ObjectId(id) });
+        res.send({
+            success: true,
+            message: "Deletion successful",
         })
     } catch (error) {
         res.send({
