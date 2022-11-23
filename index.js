@@ -2,10 +2,12 @@ const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const { MongoClient, ObjectId } = require('mongodb');
-
 require('dotenv').config();
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 const port = process.env.PORT || 5000;
+
+
 
 const app = express();
 app.use(cors());
@@ -48,6 +50,7 @@ const Services = client.db("doctors-portal").collection("appointmentOptions");
 const Bookings = client.db("doctors-portal").collection("bookings");
 const Users = client.db("doctors-portal").collection("users");
 const Doctors = client.db("doctors-portal").collection("doctors");
+const Payments = client.db("doctors-portal").collection("payments");
 
 //verify Admin 
 
@@ -161,6 +164,24 @@ app.get('/bookings', verifyJwt, async (req, res) => {
     }
 })
 
+//info 
+
+app.get('/bookings/:id', verifyJwt, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await Bookings.findOne({ _id: ObjectId(id) })
+        res.send({
+            success: true,
+            data: result
+        })
+    } catch (error) {
+        res.send({
+            success: false,
+            message: error.message
+        })
+    }
+})
+
 //saving users
 app.post("/users", async (req, res) => {
     try {
@@ -172,6 +193,71 @@ app.post("/users", async (req, res) => {
                 message: "User saved"
             }
         )
+    } catch (error) {
+        res.send({
+            success: false,
+            message: error.message
+        })
+    }
+})
+
+//deleting user
+app.delete('/users/:id', verifyJwt, verifyAdmin, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await Users.deleteOne({ _id: ObjectId(id) })
+        res.send({
+            success: true,
+            message: "user deleted"
+        })
+    } catch (error) {
+        res.send({
+            success: false,
+            message: error.message
+        })
+    }
+})
+
+//payment gateway
+app.post("/create-payment-intent", verifyJwt, async (req, res) => {
+    try {
+        const booking = req.body;
+        const price = booking.price;
+        const amount = price * 100;
+        const paymentIntent = await stripe.paymentIntents.create({
+            currency: "usd",
+            amount: amount,
+            "payment_method_types": [
+                "card"
+            ]
+        });
+        res.send({
+            clientSecret: paymentIntent.client_secret,
+        });
+    } catch (error) {
+        res.send(error.message)
+    }
+})
+
+app.post('/payments', verifyJwt, async (req, res) => {
+    try {
+        const payment = req.body;
+        const result = await Payments.insertOne(payment);
+        const id = payment.booking;
+        const filter = { _id: ObjectId(id) }
+        const updatedDoc = {
+            $set: {
+                paid: true,
+                transactionId: payment.transactionId
+            }
+        }
+
+        const updateBooking = await Bookings.updateOne(filter, updatedDoc)
+        res.send({
+            success: true,
+            message: 'Payment successful',
+            data: result
+        })
     } catch (error) {
         res.send({
             success: false,
@@ -265,6 +351,11 @@ app.put('/users/admin/:id', verifyJwt, verifyAdmin, async (req, res) => {
         })
     }
 })
+// //temporary updates
+// app.put('/price', async (req, res) => {
+//     const result = await Services.updateMany({}, { $set: { price: 99 } }, { upsert: true })
+//     res.send(result)
+// })
 
 //post doctors
 
