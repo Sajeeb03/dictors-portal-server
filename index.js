@@ -1,10 +1,11 @@
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
+const nodemailer = require('nodemailer');
 const { MongoClient, ObjectId } = require('mongodb');
 require('dotenv').config();
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
-
+const mg = require('nodemailer-mailgun-transport');
 const port = process.env.PORT || 5000;
 
 
@@ -45,6 +46,49 @@ const dbConnect = async () => {
 }
 
 dbConnect();
+
+
+const sendBookingEmail = (booking) => {
+    const { email, name, service, slot, selectedDate } = booking;
+    // let transporter = nodemailer.createTransport({
+    //     host: 'smtp.sendgrid.net',
+    //     port: 587,
+    //     auth: {
+    //         user: "apikey",
+    //         pass: process.env.SENDGRID_API_KEY
+    //     }
+    // })
+    const auth = {
+        auth: {
+            api_key: process.env.MAIL_API,
+            domain: process.env.MAIL_DOMAIN
+        }
+    }
+
+    const transporter = nodemailer.createTransport(mg(auth));
+
+
+    transporter.sendMail({
+        from: "sajeebmuntasir0@gmail.com", // verified sender email
+        to: email || "sajeebmuntasir0@gmail.com", // recipient email
+        subject: "Appointment at Doctors Portal", // Subject line
+        text: `Hello ${name}`, // plain text body
+        html: `
+        <h3>Your appointment is confirmed</h3>
+        <div>
+        <p>Your appointment for ${service} at ${slot} on ${selectedDate} is confirmed. Please be there on time.</p>
+        <p><strong>With Regards</strong></p>
+        <p>Doctors Portal Team</p>
+        </div>
+        `, // html body
+    }, function (error, info) {
+        if (error) {
+            console.log(error);
+        } else {
+            console.log('Email sent: ' + info.response);
+        }
+    });
+}
 
 const Services = client.db("doctors-portal").collection("appointmentOptions");
 const Bookings = client.db("doctors-portal").collection("bookings");
@@ -132,7 +176,7 @@ app.post("/bookings", async (req, res) => {
             })
         }
         const result = await Bookings.insertOne(booking);
-
+        sendBookingEmail(booking)
         res.send({
             success: true,
             message: "Booking Confirmed"
